@@ -239,7 +239,9 @@ if(OS_LINUX)
   add_library(${JCEF_TARGET} SHARED ${JCEF_SRCS})
   SET_LIBRARY_TARGET_PROPERTIES(${JCEF_TARGET})
   add_dependencies(${JCEF_TARGET} libcef_dll_wrapper ${JCEF_HELPER_TARGET})
-  target_link_libraries(${JCEF_TARGET} libcef_lib libcef_dll_wrapper ${CEF_STANDARD_LIBS} ${JNI_LIBRARIES})
+  find_package(PkgConfig REQUIRED)
+  pkg_check_modules(GLIB REQUIRED IMPORTED_TARGET glib-2.0)
+  target_link_libraries(${JCEF_TARGET} libcef_lib libcef_dll_wrapper ${CEF_STANDARD_LIBS} ${JNI_LIBRARIES} PkgConfig::GLIB)
   target_include_directories(${JCEF_TARGET} PUBLIC ${JNI_INCLUDE_DIRS})
 
   # Compile flags specific to the JCEF library target.
@@ -283,6 +285,15 @@ endif()
 #
 
 if(OS_MAC)
+  # Find the ant executable, including Homebrew paths.
+  find_program(ANT_EXECUTABLE ant
+    HINTS /opt/homebrew/bin /usr/local/bin
+    )
+  if(NOT ANT_EXECUTABLE)
+    message(FATAL_ERROR "ant not found. Install with: brew install ant")
+  endif()
+  message(STATUS "Using ant: ${ANT_EXECUTABLE}")
+
   # Avoid CMP0042 policy errors.
   set(CMAKE_MACOSX_RPATH 1)
 
@@ -316,6 +327,11 @@ if(OS_MAC)
   target_link_libraries(${JCEF_TARGET} libcef_dll_wrapper ${CEF_STANDARD_LIBS} ${JNI_LIBRARIES} "-framework OpenGL")
   target_include_directories(${JCEF_TARGET} PUBLIC ${JNI_INCLUDE_DIRS})
 
+  # Use ad-hoc code signing for the dynamic library (required by Xcode 14+).
+  set_target_properties(${JCEF_TARGET} PROPERTIES
+    XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY "-"
+    )
+
   # Compile flags specific to the JCEF library target.
   # USING_JAVA          = Add the USING_JAVA define.
   target_compile_definitions(${JCEF_TARGET} PRIVATE "USING_JAVA")
@@ -328,7 +344,7 @@ if(OS_MAC)
     TARGET ${JCEF_TARGET}
     POST_BUILD
     # Build the main app bundle.
-    COMMAND ant
+    COMMAND ${ANT_EXECUTABLE}
             -buildfile ${CMAKE_SOURCE_DIR}
             -Djdk7.path=${JAVA_DIR}
             -Dout.path=${CEF_TARGET_OUT_DIR}
@@ -378,6 +394,7 @@ if(OS_MAC)
     set_target_properties(${_helper_target} PROPERTIES
       MACOSX_BUNDLE_INFO_PLIST ${_helper_info_plist}
       OUTPUT_NAME ${_helper_output_name}
+      XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY "-"
       )
 
     if(USE_SANDBOX)
